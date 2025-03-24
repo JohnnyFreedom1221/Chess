@@ -1,178 +1,480 @@
-class ChessPiece:
-    SYMBOLS = {'P': 'P', 'R': 'R', 'N': 'N', 'B': 'B', 'Q': 'Q', 'K': 'K'}
+import os
+from abc import ABC, abstractmethod
 
-    def __init__(self, color, piece_type):
-        self.color = color  # 'white' or 'black'
-        self.piece_type = piece_type  # 'P', 'R', 'N', 'B', 'Q', 'K'
-        self.symbol = self.SYMBOLS[piece_type] if color == 'white' else self.SYMBOLS[piece_type].lower()
+# Базовый класс для шахматных фигур
+class ChessPiece(ABC):
+    """Базовый класс для всех шахматных фигур.
 
-    def is_valid_move(self, board, start, end):
-        raise NotImplementedError("This method should be implemented in subclasses")
+    Attributes:
+        color (str): Цвет фигуры ('white' или 'black').
+        position (str): Текущая позиция на доске (например, 'e2').
+        symbol (str): Символ для отображения на доске.
+        replacement (str): Какую фигуру заменяет (для новых фигур, по умолчанию None).
+    """
+    def __init__(self, color, position):
+        """Инициализирует фигуру.
 
-    def __str__(self):
-        return self.symbol
+        Args:
+            color (str): Цвет фигуры ('white' или 'black').
+            position (str): Начальная позиция (например, 'e2').
+        """
+        self.color = color
+        self.position = position
+        self.symbol = ''
+        self.replacement = None
 
+    @abstractmethod
+    def get_possible_moves(self, board):
+        """Возвращает список возможных ходов для фигуры.
 
+        Args:
+            board (ChessBoard): Текущая доска.
+
+        Returns:
+            list: Список возможных ходов в формате ['a1', 'b2', ...].
+        """
+        pass
+
+    def move(self, new_position, board):
+        """Перемещает фигуру на новую позицию, если ход допустим.
+
+        Args:
+            new_position (str): Целевая позиция.
+            board (ChessBoard): Текущая доска.
+
+        Returns:
+            bool: True, если ход успешен, иначе False.
+        """
+        if new_position in self.get_possible_moves(board):
+            board.make_move(self.position + '-' + new_position)
+            return True
+        return False
+
+# Класс для стандартной пешки
 class Pawn(ChessPiece):
-    def __init__(self, color):
-        super().__init__(color, 'P')
+    """Класс для пешки."""
+    def __init__(self, color, position):
+        super().__init__(color, position)
+        self.symbol = 'P' if color == 'white' else 'p'
 
-    def is_valid_move(self, board, start, end):
-        sx, sy = start
-        ex, ey = end
-        direction = -1 if self.color == 'white' else 1
+    def get_possible_moves(self, board):
+        """Возвращает список возможных ходов для пешки."""
+        moves = []
+        row, col = board.pos_to_indices(self.position)
+        direction = 1 if self.color == 'white' else -1
+        start_row = 1 if self.color == 'white' else 6
 
-        if sy == ey and ((ex == sx + direction and not board[ex][ey]) or
-                         (ex == sx + 2 * direction and sx in (1, 6) and not board[ex][ey] and not board[sx + direction][ey])):
-            return True
+        # Ход вперед на одну клетку
+        new_row = row + direction
+        if 0 <= new_row < 8 and board.board[new_row][col] is None:
+            moves.append(board.indices_to_pos(new_row, col))
+            # Ход на две клетки с начальной позиции
+            if row == start_row and board.board[new_row + direction][col] is None:
+                moves.append(board.indices_to_pos(new_row + direction, col))
 
-        if abs(sy - ey) == 1 and ex == sx + direction and board[ex][ey] and board[ex][ey].color != self.color:
-            return True
+        # Взятие по диагонали
+        for dc in [-1, 1]:
+            if 0 <= col + dc < 8 and 0 <= new_row < 8:
+                target = board.board[new_row][col + dc]
+                if target and target.color != self.color:
+                    moves.append(board.indices_to_pos(new_row, col + dc))
 
-        return False
+        return moves
 
-
+# Класс для ладьи
 class Rook(ChessPiece):
-    def __init__(self, color):
-        super().__init__(color, 'R')
+    """Класс для ладьи."""
+    def __init__(self, color, position):
+        super().__init__(color, position)
+        self.symbol = 'R' if color == 'white' else 'r'
 
-    def is_valid_move(self, board, start, end):
-        sx, sy = start
-        ex, ey = end
+    def get_possible_moves(self, board):
+        """Возвращает список возможных ходов для ладьи."""
+        return board.get_straight_moves(self.position, self.color)
 
-        if sx == ex or sy == ey:
-            step_x = 0 if sx == ex else (1 if ex > sx else -1)
-            step_y = 0 if sy == ey else (1 if ey > sy else -1)
-
-            x, y = sx + step_x, sy + step_y
-            while (x, y) != (ex, ey):
-                if board[x][y]:
-                    return False
-                x += step_x
-                y += step_y
-
-            return not board[ex][ey] or board[ex][ey].color != self.color
-
-        return False
-
-
+# Класс для коня
 class Knight(ChessPiece):
-    def __init__(self, color):
-        super().__init__(color, 'N')
+    """Класс для коня."""
+    def __init__(self, color, position):
+        super().__init__(color, position)
+        self.symbol = 'N' if color == 'white' else 'n'
 
-    def is_valid_move(self, board, start, end):
-        sx, sy = start
-        ex, ey = end
-        return (abs(sx - ex), abs(sy - ey)) in [(2, 1), (1, 2)] and (not board[ex][ey] or board[ex][ey].color != self.color)
+    def get_possible_moves(self, board):
+        """Возвращает список возможных ходов для коня."""
+        moves = []
+        row, col = board.pos_to_indices(self.position)
+        offsets = [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]
+        for dr, dc in offsets:
+            new_row, new_col = row + dr, col + dc
+            if 0 <= new_row < 8 and 0 <= new_col < 8:
+                target = board.board[new_row][new_col]
+                if target is None or target.color != self.color:
+                    moves.append(board.indices_to_pos(new_row, new_col))
+        return moves
 
-
+# Класс для слона
 class Bishop(ChessPiece):
-    def __init__(self, color):
-        super().__init__(color, 'B')
+    """Класс для слона."""
+    def __init__(self, color, position):
+        super().__init__(color, position)
+        self.symbol = 'B' if color == 'white' else 'b'
 
-    def is_valid_move(self, board, start, end):
-        sx, sy = start
-        ex, ey = end
+    def get_possible_moves(self, board):
+        """Возвращает список возможных ходов для слона."""
+        return board.get_diagonal_moves(self.position, self.color)
 
-        if abs(sx - ex) == abs(sy - ey):
-            step_x = 1 if ex > sx else -1
-            step_y = 1 if ey > sy else -1
+# Класс для ферзя
+class Queen(ChessPiece):
+    """Класс для ферзя."""
+    def __init__(self, color, position):
+        super().__init__(color, position)
+        self.symbol = 'Q' if color == 'white' else 'q'
 
-            x, y = sx + step_x, sy + step_y
-            while (x, y) != (ex, ey):
-                if board[x][y]:
-                    return False
-                x += step_x
-                y += step_y
+    def get_possible_moves(self, board):
+        """Возвращает список возможных ходов для ферзя."""
+        return board.get_straight_moves(self.position, self.color) + \
+               board.get_diagonal_moves(self.position, self.color)
 
-            return not board[ex][ey] or board[ex][ey].color != self.color
+# Класс для короля
+class King(ChessPiece):
+    """Класс для короля."""
+    def __init__(self, color, position):
+        super().__init__(color, position)
+        self.symbol = 'K' if color == 'white' else 'k'
 
+    def get_possible_moves(self, board):
+        """Возвращает список возможных ходов для короля."""
+        moves = []
+        row, col = board.pos_to_indices(self.position)
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                if dr == 0 and dc == 0:
+                    continue
+                new_row, new_col = row + dr, col + dc
+                if 0 <= new_row < 8 and 0 <= new_col < 8:
+                    target = board.board[new_row][new_col]
+                    if target is None or target.color != self.color:
+                        moves.append(board.indices_to_pos(new_row, new_col))
+        return moves
+
+# Класс для Суперслона
+class SuperBishop(Bishop):
+    """Класс для Суперслона, заменяющего слонов."""
+    def __init__(self, color, position):
+        super().__init__(color, position)
+        self.symbol = 'E' if color == 'white' else 'e'
+        self.replacement = 'Bishop'
+
+    def get_possible_moves(self, board):
+        """Возвращает список возможных ходов для Суперслона."""
+        return board.get_diagonal_moves(self.position, self.color, super_bishop=True)
+
+    def move(self, new_position, board):
+        """Перемещает Суперслона, съедая все фигуры на пути."""
+        if new_position in self.get_possible_moves(board):
+            board.make_move(self.position + '-' + new_position, super_bishop=True)
+            return True
         return False
 
+# Класс для Забора
+class Fence(Pawn):
+    """Класс для Забора, заменяющего пешки."""
+    def __init__(self, color, position):
+        super().__init__(color, position)
+        self.symbol = 'F' if color == 'white' else 'f'
+        self.replacement = 'Pawn'
+        self.invulnerable = True
 
-class Queen(ChessPiece):
-    def __init__(self, color):
-        super().__init__(color, 'Q')
+    def get_possible_moves(self, board):
+        """Возвращает список возможных ходов для Забора."""
+        moves = []
+        row, col = board.pos_to_indices(self.position)
+        direction = 1 if self.color == 'white' else -1
 
-    def is_valid_move(self, board, start, end):
-        return Rook(self.color).is_valid_move(board, start, end) or Bishop(self.color).is_valid_move(board, start, end)
+        # Ход вперед
+        new_row = row + direction
+        if 0 <= new_row < 8 and board.board[new_row][col] is None:
+            moves.append(board.indices_to_pos(new_row, col))
 
+        # Взятие по диагонали и вертикали
+        for dr, dc in [(direction, -1), (direction, 1), (direction, 0)]:
+            new_row, new_col = row + dr, col + dc
+            if 0 <= new_row < 8 and 0 <= new_col < 8:
+                target = board.board[new_row][new_col]
+                if target and target.color != self.color and not getattr(target, 'invulnerable', False):
+                    moves.append(board.indices_to_pos(new_row, new_col))
+        return moves
 
-class King(ChessPiece):
-    def __init__(self, color):
-        super().__init__(color, 'K')
+# Класс для Гоши
+class Gosha(King):
+    """Класс для Гоши, заменяющего короля."""
+    def __init__(self, color, position):
+        super().__init__(color, position)
+        self.symbol = 'G' if color == 'white' else 'g'
+        self.replacement = 'King'
 
-    def is_valid_move(self, board, start, end):
-        sx, sy = start
-        ex, ey = end
-        return max(abs(sx - ex), abs(sy - ey)) == 1 and (not board[ex][ey] or board[ex][ey].color != self.color)
+    def get_possible_moves(self, board):
+        """Возвращает список возможных ходов для Гоши."""
+        moves = []
+        row, col = board.pos_to_indices(self.position)
+        for dr in range(-2, 3):
+            for dc in range(-2, 3):
+                if dr == 0 and dc == 0:
+                    continue
+                new_row, new_col = row + dr, col + dc
+                if 0 <= new_row < 8 and 0 <= new_col < 8:
+                    target = board.board[new_row][new_col]
+                    if target is None or target.color != self.color:
+                        moves.append(board.indices_to_pos(new_row, new_col))
+        return moves
 
+# Класс для хода
+class Move:
+    """Класс для представления хода.
 
+    Attributes:
+        start_pos (str): Начальная позиция.
+        end_pos (str): Конечная позиция.
+        piece (ChessPiece): Фигура, которая ходила.
+        captured (ChessPiece): Съеденная фигура (если есть).
+    """
+    def __init__(self, start_pos, end_pos, piece, captured=None):
+        self.start_pos = start_pos
+        self.end_pos = end_pos
+        self.piece = piece
+        self.captured = captured
+
+# Класс для шахматной доски
 class ChessBoard:
+    """Класс для управления шахматной доской.
+
+    Attributes:
+        board (list): Двумерный список 8x8 с фигурами.
+        move_history (list): История ходов.
+    """
     def __init__(self):
-        self.board = [[None] * 8 for _ in range(8)]
-        self.setup_pieces()
-        self.move_count = 0
+        """Инициализирует доску с начальной расстановкой."""
+        self.board = [[None for _ in range(8)] for _ in range(8)]
+        self.move_history = []
+        self.setup_board()
 
-    def setup_pieces(self):
-        for _ in range(8):
-            self.board[1][_] = Pawn('black')
-            self.board[6][_] = Pawn('white')
+    def setup_board(self):
+        """Устанавливает начальную расстановку фигур."""
+        # Пешки
+        for col in range(8):
+            self.board[1][col] = Pawn('white', self.indices_to_pos(1, col))
+            self.board[6][col] = Pawn('black', self.indices_to_pos(6, col))
+        # Ладьи
+        self.board[0][0], self.board[0][7] = Rook('white', 'a1'), Rook('white', 'h1')
+        self.board[7][0], self.board[7][7] = Rook('black', 'a8'), Rook('black', 'h8')
+        # Кони
+        self.board[0][1], self.board[0][6] = Knight('white', 'b1'), Knight('white', 'g1')
+        self.board[7][1], self.board[7][6] = Knight('black', 'b8'), Knight('black', 'g8')
+        # Слоны
+        self.board[0][2], self.board[0][5] = Bishop('white', 'c1'), Bishop('white', 'f1')
+        self.board[7][2], self.board[7][5] = Bishop('black', 'c8'), Bishop('black', 'f8')
+        # Ферзи
+        self.board[0][3] = Queen('white', 'd1')
+        self.board[7][3] = Queen('black', 'd8')
+        # Короли
+        self.board[0][4] = King('white', 'e1')
+        self.board[7][4] = King('black', 'e8')
 
-        pieces = [Rook, Knight, Bishop, Queen, King, Bishop, Knight, Rook]
-        for _, piece in enumerate(pieces):
-            self.board[0][_] = piece('black')
-            self.board[7][_] = piece('white')
+    def pos_to_indices(self, pos):
+        """Преобразует позицию (например, 'e2') в индексы."""
+        col = ord(pos[0]) - ord('a')
+        row = int(pos[1]) - 1
+        return row, col
+
+    def indices_to_pos(self, row, col):
+        """Преобразует индексы в позицию."""
+        return chr(ord('a') + col) + str(row + 1)
+
+    def get_straight_moves(self, pos, color, super_bishop=False):
+        """Возвращает возможные ходы по прямым линиям."""
+        moves = []
+        row, col = self.pos_to_indices(pos)
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        for dr, dc in directions:
+            for i in range(1, 8):
+                new_row, new_col = row + dr * i, col + dc * i
+                if not (0 <= new_row < 8 and 0 <= new_col < 8):
+                    break
+                target = self.board[new_row][new_col]
+                if target is None:
+                    moves.append(self.indices_to_pos(new_row, new_col))
+                elif target.color != color and not getattr(target, 'invulnerable', False):
+                    moves.append(self.indices_to_pos(new_row, new_col))
+                    break
+                else:
+                    break
+        return moves
+
+    def get_diagonal_moves(self, pos, color, super_bishop=False):
+        """Возвращает возможные ходы по диагоналям."""
+        moves = []
+        row, col = self.pos_to_indices(pos)
+        directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+        for dr, dc in directions:
+            for i in range(1, 8):
+                new_row, new_col = row + dr * i, col + dc * i
+                if not (0 <= new_row < 8 and 0 <= new_col < 8):
+                    break
+                target = self.board[new_row][new_col]
+                if target is None:
+                    moves.append(self.indices_to_pos(new_row, new_col))
+                    if not super_bishop:
+                        continue
+                elif target.color != color and not getattr(target, 'invulnerable', False):
+                    moves.append(self.indices_to_pos(new_row, new_col))
+                    if not super_bishop:
+                        break
+                else:
+                    if not super_bishop:
+                        break
+        return moves
+
+    def make_move(self, move_str, super_bishop=False):
+        """Выполняет ход на доске."""
+        start_pos, end_pos = move_str.split('-')
+        start_row, start_col = self.pos_to_indices(start_pos)
+        end_row, end_col = self.pos_to_indices(end_pos)
+        piece = self.board[start_row][start_col]
+        captured = self.board[end_row][end_col]
+
+        if super_bishop:
+            # Суперслон съедает все фигуры на пути
+            dr = -1 if start_row > end_row else 1 if start_row < end_row else 0
+            dc = -1 if start_col > end_col else 1 if start_col < end_col else 0
+            r, c = start_row + dr, start_col + dc
+            while r != end_row or c != end_col:
+                self.board[r][c] = None
+                r += dr
+                c += dc
+
+        self.board[end_row][end_col] = piece
+        self.board[start_row][start_col] = None
+        piece.position = end_pos
+        self.move_history.append(Move(start_pos, end_pos, piece, captured))
+
+    def undo_move(self):
+        """Отменяет последний ход."""
+        if not self.move_history:
+            return False
+        move = self.move_history.pop()
+        start_row, start_col = self.pos_to_indices(move.start_pos)
+        end_row, end_col = self.pos_to_indices(move.end_pos)
+        self.board[start_row][start_col] = move.piece
+        self.board[end_row][end_col] = move.captured
+        move.piece.position = move.start_pos
+        return True
 
     def display(self):
-        print("  a b c d e f g h")
-        print(" +----------------")
-        for i in range(8):
-            print(f"{8-i}|", end=" ")
+        """Отображает доску в консоли."""
+        print('\n  a b c d e f g h')
+        for i in range(7, -1, -1):
+            row = f'{i+1} '
             for j in range(8):
-                print(self.board[i][j] or ".", end=" ")
-            print()
+                piece = self.board[i][j]
+                row += (piece.symbol if piece else '.') + ' '
+            print(row)
+        print('  a b c d e f g h\n')
 
-    def move(self, start, end, color):
-        sx, sy = start
-        ex, ey = end
-        piece = self.board[sx][sy]
-
-        if piece and piece.color == color and piece.is_valid_move(self.board, start, end):
-            self.board[ex][ey] = piece
-            self.board[sx][sy] = None
-            self.move_count += 1
-            return True
-        return False
-
-
+# Класс для управления игрой
 class ChessGame:
+    """Класс для управления игрой в шахматы.
+
+    Attributes:
+        board (ChessBoard): Объект шахматной доски.
+        current_player (str): Текущий игрок ('white' или 'black').
+        move_count (int): Количество сделанных ходов.
+        log_file (str): Путь к файлу для записи ходов.
+        replacements (dict): Словарь замен фигур для каждого игрока.
+    """
     def __init__(self):
+        """Инициализирует игру."""
         self.board = ChessBoard()
         self.current_player = 'white'
+        self.move_count = 0
+        self.log_file = 'chess_moves.txt'
+        self.replacements = {'white': {}, 'black': {}}
+        self.setup_replacements()
 
-    def parse_input(self, move):
-        try:
-            return 8 - int(move[1]), ord(move[0]) - ord('a')
-        except:
-            return None
+    def setup_replacements(self):
+        """Настраивает замену фигур перед началом игры."""
+        for player in ['white', 'black']:
+            print(f"\nНастройка для {player}:")
+            if input("Хотите заменить фигуры? (y/n): ").lower() == 'y':
+                print("Доступные замены: 1) Суперслон (за слонов), 2) Забор (за пешки), 3) Гоша (за короля)")
+                choice = input("Введите номера замен (через пробел, например '1 3'): ").split()
+                for c in choice:
+                    if c == '1':
+                        self.replacements[player]['Bishop'] = SuperBishop
+                        for pos in (('c1', 'f1') if player == 'white' else ('c8', 'f8')):
+                            r, c = self.board.pos_to_indices(pos)
+                            self.board.board[r][c] = None
+                    elif c == '2':
+                        self.replacements[player]['Pawn'] = Fence
+                        row = 1 if player == 'white' else 6
+                        for col in range(8):
+                            pos = self.board.indices_to_pos(row, col)
+                            self.board.board[row][col] = Fence(player, pos)
+                    elif c == '3':
+                        self.replacements[player]['King'] = Gosha
+                        pos = 'e1' if player == 'white' else 'e8'
+                        r, c = self.board.pos_to_indices(pos)
+                        self.board.board[r][c] = Gosha(player, pos)
 
-    def play(self):
+    def save_move_to_file(self, move_str):
+        """Записывает ход в файл."""
+        with open(self.log_file, 'a') as f:
+            f.write(f"{self.move_count}. {move_str}\n")
+
+    def handle_input(self):
+        """Обрабатывает ввод пользователя."""
         while True:
             self.board.display()
-            print(f"Ход {self.current_player} ({self.board.move_count}): ")
-            move = input("Введите ход (например, e2 e4): ").strip().split()
-            if len(move) != 2:
-                print("Неверный ввод!")
+            prompt = f"Введите ход для {self.current_player} (например, 'e2-e4' или 'backup'): "
+            move_str = input(prompt).strip()
+            if move_str.lower() == 'backup':
+                if self.board.undo_move():
+                    self.current_player = 'black' if self.current_player == 'white' else 'white'
+                    self.move_count -= 1
+                    print("Ход отменен.")
+                else:
+                    print("Нет ходов для отмены.")
                 continue
 
-            start, end = self.parse_input(move[0]), self.parse_input(move[1])
-            if start and end and self.board.move(start, end, self.current_player):
+            if '-' not in move_str:
+                print("Неверный формат. Используйте 'e2-e4'.")
+                continue
+
+            start_pos, end_pos = move_str.split('-')
+            start_row, start_col = self.board.pos_to_indices(start_pos)
+            piece = self.board.board[start_row][start_col]
+
+            if not piece or piece.color != self.current_player:
+                print("На этой позиции нет вашей фигуры.")
+                continue
+
+            if piece.move(end_pos, self.board):
+                self.save_move_to_file(move_str)
+                self.move_count += 1
                 self.current_player = 'black' if self.current_player == 'white' else 'white'
+                break
             else:
-                print("Недопустимый ход!")
+                print("Недопустимый ход.")
 
+    def play(self):
+        """Запускает основной цикл игры."""
+        print("Добро пожаловать в шахматы! Введите ходы в формате 'e2-e4'. Для отмены хода введите 'backup'.")
+        while True:
+            self.handle_input()
 
+# Запуск игры
 if __name__ == "__main__":
+    if os.path.exists('chess_moves.txt'):
+        os.remove('chess_moves.txt')
     game = ChessGame()
     game.play()
+
