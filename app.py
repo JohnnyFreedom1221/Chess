@@ -51,34 +51,53 @@ class ChessPiece(ABC):
         return False
 
 
+# Класс пешек (будь он не ладен)
 class Pawn(ChessPiece):
-    """Класс пешек."""
-    def __init__(self, color, location):
-        super().__init__(color, location)
+    """Класс для пешки."""
+    def __init__(self, color, position):
+        super().__init__(color, position)
         self.symbol = 'P' if color == 'white' else 'p'
 
     def get_possible_moves(self, board):
         """Возвращает список возможных ходов для пешки."""
         moves = []
-        row, col = board.pos_to_indices(self.location)
+        row, col = board.pos_to_indices(self.position)
         direction = 1 if self.color == 'white' else -1
         start_row = 1 if self.color == 'white' else 6
 
-        # Тут на клетку вперёд пойдёшиваешь
+        # Здесь реализован обыкновыенный ход вперёд
         new_row = row + direction
         if 0 <= new_row < 8 and board.board[new_row][col] is None:
             moves.append(board.indices_to_pos(new_row, col))
-            # Тута на две клетки со старта прыгаешь
             if row == start_row and board.board[new_row + direction][col] is None:
                 moves.append(board.indices_to_pos(new_row + direction, col))
 
-        # Тута по диагонали кушаешь
+        # Здесь представлено взятие по диагонали
         for dc in [-1, 1]:
-            if (0 <= (col + dc) < 8) and (0 <= new_row < 8):
+            if 0 <= col + dc < 8 and 0 <= new_row < 8:
                 target = board.board[new_row][col + dc]
                 if target and target.color != self.color:
                     moves.append(board.indices_to_pos(new_row, col + dc))
 
+        # Пресловутое взятие на проходе.
+        if self.color == 'white' and self.position[1] == '5':
+            for dc in [-1, 1]:
+                col_adj = col + dc
+                if 0 <= col_adj < 8:
+                    adjacent_piece = board.board[row][col_adj]
+                    if adjacent_piece and adjacent_piece.color == 'black' and isinstance(adjacent_piece, Pawn):
+                        last_move = board.move_history[-1] if board.move_history else None
+                        if last_move and last_move.piece == adjacent_piece and last_move.start_pos[1] == '7' and last_move.end_pos[1] == '5':
+                            moves.append(board.indices_to_pos(row + 1, col_adj))
+        elif self.color == 'black' and self.position[1] == '4':
+            for dc in [-1, 1]:
+                col_adj = col + dc
+                if 0 <= col_adj < 8:
+                    adjacent_piece = board.board[row][col_adj]
+                    if adjacent_piece and adjacent_piece.color == 'white' and isinstance(adjacent_piece, Pawn):
+                        last_move = board.move_history[-1] if board.move_history else None
+                        if last_move and last_move.piece == adjacent_piece and last_move.start_pos[1] == '2' and last_move.end_pos[1] == '4':
+                            moves.append(board.indices_to_pos(row - 1, col_adj))
         return moves
 
 
@@ -381,6 +400,39 @@ class ChessBoard:
         print('  a b c d e f g h\n')
 
 
+    def display_with_highlights(self, possible_moves):
+        """Отображение доски с подсветкой возможных ходов."""
+        print('\n  a b c d e f g h')
+        for i in range(7, -1, -1):
+            row = f'{i+1} '
+            for j in range(8):
+                pos = self.indices_to_pos(i, j)
+                if pos in possible_moves:
+                    row += '*' + ' '
+                else:
+                    piece = self.board[i][j]
+                    row += (piece.symbol if piece else '.') + ' '
+            print(row)
+        print('  a b c d e f g h\n')
+
+    def get_threatened_pieces(self, color):
+        """Возврат списка фигур, находящихся под угрозой."""
+        threatened = []
+        opponent_color = 'black' if color == 'white' else 'white'
+        for row in range(8):
+            for col in range(8):
+                piece = self.board[row][col]
+                if piece and piece.color == color:
+                    for r in range(8):
+                        for c in range(8):
+                            opponent_piece = self.board[r][c]
+                            if opponent_piece and opponent_piece.color == opponent_color:
+                                if piece.position in opponent_piece.get_possible_moves(self):
+                                    threatened.append(piece)
+                                    break
+        return threatened
+
+
 class ChessGame:
     """Класс управления игрой в шахматы.
 
@@ -434,7 +486,8 @@ class ChessGame:
         """Обработка ввода пользователя."""
         while True:
             self.board.display()
-            prompt = f"Введите ход для {self.current_player} (например, 'e2-e4' или 'backup'): "
+            self.display_threatened_pieces()
+            prompt = f"Введите ход для {self.current_player} (например, 'e2-e4', 'backup' или 'show'): "
             move_str = input(prompt).strip()
             if move_str.lower() == 'backup':
                 if self.board.undo_move():
@@ -443,6 +496,9 @@ class ChessGame:
                     print("Ход отменен.")
                 else:
                     print("Нет ходов для отмены.")
+                continue
+            elif move_str.lower() == 'show':
+                self.show_possible_moves()
                 continue
 
             if '-' not in move_str:
@@ -465,14 +521,115 @@ class ChessGame:
             else:
                 print("Недопустимый ход.")
 
+    def display_threatened_pieces(self):
+        """Вывод информации о фигурах, находящихся под угрозой."""
+        threatened = self.board.get_threatened_pieces(self.current_player)
+        if threatened:
+            print(f"Фигуры {self.current_player}, находящиеся под угрозой:")
+            for piece in threatened:
+                print(f"{piece.symbol} на {piece.position}")
+        else:
+            print(f"Нет фигур {self.current_player}, находящихся под угрозой.")
+
+    def show_possible_moves(self):
+        """Отображение возможных (допустимых) ходов для выбранной фигуры."""
+        pos = input("Введите позицию фигуры (например, 'e2'): ").strip()
+        row, col = self.board.pos_to_indices(pos)
+        piece = self.board.board[row][col]
+        if piece and piece.color == self.current_player:
+            moves = piece.get_possible_moves(self.board)
+            self.board.display_with_highlights(moves)
+        else:
+            print("На этой позиции нет вашей фигуры.")
+
     def play(self):
         """Запуск основного цикла игры."""
-        print("Добро пожаловать в шахматы! Введите ходы в формате 'e2-e4'. Для отмены хода введите 'backup'.")
+        print(
+            "Добро пожаловать в шахматы! Введите ходы в формате 'e2-e4'. Для отмены хода введите 'backup'. Для подсказки ходов введите 'show'.")
         while True:
             self.handle_input()
 
-# Тестовый запуск
+
+# Класс игрового процесса и правил (класс шашек)
+class CheckersPiece(ChessPiece):
+    """Класс для шашек."""
+    def __init__(self, color, position):
+        super().__init__(color, position)
+        self.symbol = 'C' if color == 'white' else 'c'
+
+    def get_possible_moves(self, board):
+        """Возвращает список возможных ходов для шашки."""
+        moves = []
+        row, col = board.pos_to_indices(self.position)
+        directions = [(-1, -1), (-1, 1)] if self.color == 'white' else [(1, -1), (1, 1)]
+        for dr, dc in directions:
+            new_row, new_col = row + dr, col + dc
+            if 0 <= new_row < 8 and 0 <= new_col < 8:
+                target = board.board[new_row][new_col]
+                if target is None:
+                    moves.append(board.indices_to_pos(new_row, new_col))
+                elif target.color != self.color:
+                    jump_row, jump_col = new_row + dr, new_col + dc
+                    if 0 <= jump_row < 8 and 0 <= jump_col < 8 and board.board[jump_row][jump_col] is None:
+                        moves.append(board.indices_to_pos(jump_row, jump_col))
+        return moves
+
+# Класс доски
+class CheckersBoard(ChessBoard):
+    """Класс для доски шашек."""
+    def setup_board(self):
+        """Устанавливает начальную расстановку шашек."""
+        for row in range(3):
+            for col in range(8):
+                if (row + col) % 2 == 1:
+                    self.board[row][col] = CheckersPiece('black', self.indices_to_pos(row, col))
+        for row in range(5, 8):
+            for col in range(8):
+                if (row + col) % 2 == 1:
+                    self.board[row][col] = CheckersPiece('white', self.indices_to_pos(row, col))
+
+# Класс самой игры
+class CheckersGame:
+    """Класс для управления игрой в шашки."""
+    def __init__(self):
+        self.board = CheckersBoard()
+        self.current_player = 'white'
+        self.move_count = 0
+
+    def play(self):
+        """Запускает основной цикл игры в шашки."""
+        print("Добро пожаловать в шашки! Введите ходы в формате 'e2-e4'.")
+        while True:
+            self.board.display()
+            prompt = f"Введите ход для {self.current_player} (например, 'e2-e4'): "
+            move_str = input(prompt).strip()
+            if '-' not in move_str:
+                print("Неверный формат. Используйте 'e2-e4'.")
+                continue
+            start_pos, end_pos = move_str.split('-')
+            start_row, start_col = self.board.pos_to_indices(start_pos)
+            piece = self.board.board[start_row][start_col]
+            if not piece or piece.color != self.current_player:
+                print("На этой позиции нет вашей шашки.")
+                continue
+            if piece.move(end_pos, self.board):
+                self.move_count += 1
+                self.current_player = 'black' if self.current_player == 'white' else 'white'
+            else:
+                print("Недопустимый ход.")
+
+# Тестовый запуск игры
 if os.path.exists('chess_moves.txt'):
-    os.remove('chess_moves.txt') # Удаление существующего файла с логами игры во избежание конфликтов и ошибок при записи
-game = ChessGame()
-game.play()
+    os.remove('chess_moves.txt') # Во избежание некорректного сохранения истории ходов и возникновения конфликтов при записи файла с ходами мы пересоздаём файл с ходами
+print("Выберите игру: 1) Шахматы, 2) Шашки")
+choice = input("Введите номер (1 или 2): ").strip()
+if choice == '1':
+    game = ChessGame()
+    game.play()
+elif choice == '2':
+    game = CheckersGame()
+    game.play()
+else:
+    print("Неверный выбор. Запускаются шахматы по умолчанию.")
+    game = ChessGame()
+    game.play()
