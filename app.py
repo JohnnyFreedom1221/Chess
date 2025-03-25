@@ -272,7 +272,7 @@ class ChessBoard:
         movement_history (list): История ходов.
     """
     def __init__(self):
-        """Инициализирует доску с начальной расстановкой."""
+        """Инициализация доски с начальной расстановкой."""
         self.board = [[None for _ in range(8)] for _ in range(8)]
         self.movement_history = []
         self.setup_board()
@@ -300,13 +300,13 @@ class ChessBoard:
         self.board[7][4] = King('black', 'e8')
 
     def pos_to_indices(self, pos):
-        """Преобразует позицию (например, 'e2') в индексы."""
+        """Преобразование позиций (например, 'e2') в индексы."""
         col = ord(pos[0]) - ord('a')
         row = int(pos[1]) - 1
         return row, col
 
     def indices_to_pos(self, row, col):
-        """Преобразует индексы в позицию."""
+        """Преобразование индексов в позиции."""
         return chr(ord('a') + col) + str(row + 1)
 
     def get_straight_moves(self, pos, color, super_bishop=False):
